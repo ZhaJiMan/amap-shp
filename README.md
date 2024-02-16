@@ -8,4 +8,6 @@
 
 示例效果如下（用 [frykit](https://github.com/ZhaJiMan/frykit) 制作）
 
+![province_map](image/province_map.png)
+
 ![city_map](image/city_map.png)
