@@ -9,5 +9,4 @@ def main() -> None:
     make_zip.main()
 
 
-if __name__ == "__main__":
-    main()
+main()

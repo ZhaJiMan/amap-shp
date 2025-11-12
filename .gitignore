@@ -1,7 +1,8 @@
 __pycache__/
-.mypy_cache
-.ruff_cache
-*.egg-info
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 build/
 dist/
 .venv/
+output/

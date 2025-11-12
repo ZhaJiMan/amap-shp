@@ -4,11 +4,11 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from loguru import logger
 
-from amap_shp.utils import get_data_dir
+from amap_shp.utils import get_output_dir
 
 
 def main() -> None:
-    dirpath = get_data_dir()
+    dirpath = get_output_dir()
 
     with ZipFile(
         dirpath / "geojson.zip", mode="w", compression=ZIP_DEFLATED, compresslevel=7

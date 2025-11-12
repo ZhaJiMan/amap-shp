@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypedDict
 
 __all__ = [
     "CityProperties",
@@ -9,7 +9,6 @@ __all__ = [
     "DistrictDict",
     "DistrictProperties",
     "ProvinceProperties",
-    "RawDistrictProperties",
     "SuggestionDict",
 ]
 
@@ -39,16 +38,6 @@ class DistrictData(TypedDict):
     districts: list[DistrictDict]
 
 
-class RawDistrictProperties(TypedDict):
-    province_name: str
-    province_adcode: int
-    city_name: str
-    city_adcode: int
-    district_name: str
-    district_adcode: int
-    short_name: NotRequired[str]
-
-
 class DistrictProperties(TypedDict):
     province_name: str
     province_adcode: int
@@ -56,7 +45,6 @@ class DistrictProperties(TypedDict):
     city_adcode: int
     district_name: str
     district_adcode: int
-    short_name: str
 
 
 class CityProperties(TypedDict):
@@ -64,13 +52,11 @@ class CityProperties(TypedDict):
     province_adcode: int
     city_name: str
     city_adcode: int
-    short_name: str
 
 
 class ProvinceProperties(TypedDict):
     province_name: str
     province_adcode: int
-    short_name: str
 
 
 class CountryProperties(TypedDict):

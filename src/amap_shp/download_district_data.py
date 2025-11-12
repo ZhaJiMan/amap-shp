@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable, Mapping
 from functools import wraps
@@ -9,24 +8,22 @@ from typing import cast
 import frykit.shp as fshp
 import requests
 import shapely
-from dotenv import load_dotenv
 from frykit.shp.typing import FeatureDict, GeoJSONDict
-from frykit.utils import new_dir
 from loguru import logger
 from retrying import retry
 
 from amap_shp.exceptions import AmapDataError, AmapStatusError
-from amap_shp.typing import DistrictData, DistrictProperties, RawDistrictProperties
+from amap_shp.typing import DistrictData, DistrictProperties
 from amap_shp.utils import (
-    dump_json,
+    dump_geojson,
     gcj_geometry_to_wgs,
-    get_data_dir,
+    get_amap_key,
+    get_output_dir,
     polyline_to_polygon,
     round_geometry,
-    shorten_district_name,
 )
 
-load_dotenv()
+AMAP_KEY = get_amap_key()
 
 
 def amap_retry[T, **P](func: Callable[P, T]) -> Callable[P, T]:
@@ -63,13 +60,13 @@ def get_district_data(url: str, params: Mapping[str, str]) -> DistrictData:
 
 def get_district_properties_list() -> list[DistrictProperties]:
     """获取所有区县的元数据。没有区县的省市用它自己代替区县。"""
-    params = {"key": os.getenv("AMAP_KEY", ""), "subdistrict": "3"}
+    params = {"key": AMAP_KEY, "subdistrict": "3"}
     url = "http://restapi.amap.com/v3/config/district"
     data = get_district_data(url, params)
 
     country_dict = data["districts"][0]
-    properties_list: list[RawDistrictProperties] = []
-    properties: RawDistrictProperties
+    properties_list: list[DistrictProperties] = []
+    properties: DistrictProperties
 
     for province_dict in country_dict["districts"]:
         # 台湾没有下级数据
@@ -144,8 +141,6 @@ def get_district_properties_list() -> list[DistrictProperties]:
         if properties["district_name"] == "海西蒙古族藏族自治州直辖":
             properties["district_name"] = "大柴旦行政委员会"
 
-        properties["short_name"] = shorten_district_name(properties["district_name"])
-
     properties_list.sort(key=lambda x: x["district_adcode"])
 
     return cast(list[DistrictProperties], properties_list)
@@ -167,7 +162,7 @@ def get_district_geometry(adcode: int) -> shapely.Polygon | shapely.MultiPolygon
     """
     url = "https://restapi.amap.com/v3/config/district"
     params = {
-        "key": os.getenv("AMAP_KEY", ""),
+        "key": AMAP_KEY,
         "keywords": str(adcode),
         "subdistrict": "0",
         "extensions": "all",
@@ -232,12 +227,13 @@ def make_nine_line_geojson() -> GeoJSONDict:
 
 
 def main() -> None:
-    dirpath = new_dir(get_data_dir())
+    dirpath = get_output_dir()
+    dirpath.mkdir(parents=True, exist_ok=True)
 
-    dump_json(dirpath / "cn_district.json", make_district_geojson())
+    dump_geojson(dirpath / "cn_district.json", make_district_geojson())
     logger.info("区县数据下载完成")
 
-    dump_json(dirpath / "nine_line.json", make_nine_line_geojson())
+    dump_geojson(dirpath / "nine_line.json", make_nine_line_geojson())
     logger.info("九段线数据下载完成")
 
 

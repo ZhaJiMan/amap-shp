@@ -14,13 +14,7 @@ from amap_shp.typing import (
     DistrictProperties,
     ProvinceProperties,
 )
-from amap_shp.utils import (
-    dump_json,
-    get_data_dir,
-    load_json,
-    shorten_city_name,
-    shorten_province_name,
-)
+from amap_shp.utils import dump_geojson, get_output_dir, load_geojson
 
 
 def make_city_geojson(district_data: GeoJSONDict) -> GeoJSONDict:
@@ -40,10 +34,8 @@ def make_city_geojson(district_data: GeoJSONDict) -> GeoJSONDict:
             "province_adcode": district_properties["province_adcode"],
             "city_name": district_properties["city_name"],
             "city_adcode": district_properties["city_adcode"],
-            "short_name": shorten_city_name(district_properties["city_name"]),
         }
-
-        feature = fshp.make_feature(geometry_dict, city_properties)  # pyright: ignore[reportArgumentType]
+        feature = fshp.make_feature(geometry_dict, city_properties)
         features.append(feature)
 
     city_data = fshp.make_geojson(features)
@@ -66,10 +58,8 @@ def make_province_geojson(city_data: GeoJSONDict) -> GeoJSONDict:
         province_properties: ProvinceProperties = {
             "province_name": city_properties["province_name"],
             "province_adcode": city_properties["province_adcode"],
-            "short_name": shorten_province_name(city_properties["province_name"]),
         }
-
-        feature = fshp.make_feature(geometry_dict, province_properties)  # pyright: ignore[reportArgumentType]
+        feature = fshp.make_feature(geometry_dict, province_properties)
         features.append(feature)
 
     province_data = fshp.make_geojson(features)
@@ -93,21 +83,20 @@ def make_border_geojson(province_data: GeoJSONDict) -> GeoJSONDict:
 
 
 def main() -> None:
-    dirpath = get_data_dir()
+    dirpath = get_output_dir()
 
-    district_data = load_json(dirpath / "cn_district.json")
-    district_data = cast(GeoJSONDict, district_data)
+    district_data = load_geojson(dirpath / "cn_district.json")
 
     city_data = make_city_geojson(district_data)
-    dump_json(dirpath / "cn_city.json", city_data)
+    dump_geojson(dirpath / "cn_city.json", city_data)
     logger.info("市级数据制作完成")
 
     province_data = make_province_geojson(city_data)
-    dump_json(dirpath / "cn_province.json", province_data)
+    dump_geojson(dirpath / "cn_province.json", province_data)
     logger.info("省级数据制作完成")
 
     border_data = make_border_geojson(province_data)
-    dump_json(dirpath / "cn_border.json", border_data)
+    dump_geojson(dirpath / "cn_border.json", border_data)
     logger.info("国界数据制作完成")
 
 
