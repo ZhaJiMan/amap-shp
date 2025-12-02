@@ -2,25 +2,23 @@ from __future__ import annotations
 
 import json
 import os
-from io import StringIO
 from pathlib import Path
-from typing import cast
+from typing import overload
 
+import geopandas as gpd
 import numpy as np
 import shapely
 from dotenv import load_dotenv
-from frykit.shp.typing import GeoJSONDict
+from numpy.typing import ArrayLike, NDArray
 from prcoords import gcj_wgs_bored
-from shapely.geometry.base import BaseGeometry
 
 __all__ = [
     "dump_geojson",
-    "gcj_geometry_to_wgs",
+    "fill_polygon",
     "gcj_to_wgs",
     "get_amap_key",
     "get_output_dir",
     "load_geojson",
-    "polyline_to_polygon",
     "round_geometry",
 ]
 
@@ -32,54 +30,57 @@ def get_amap_key() -> str:
 
 
 def get_output_dir() -> Path:
-    """获取数据目录"""
     return Path(os.getenv("OUTPUT_DIR", "output"))
 
 
-type StrPath = str | os.PathLike[str]
-
-
-def load_geojson(filepath: StrPath) -> GeoJSONDict:
-    """加载本地 GeoJSON 文件"""
+def load_geojson(filepath: str | Path) -> gpd.GeoDataFrame:
     with open(filepath, encoding="utf-8") as f:
-        return cast(GeoJSONDict, json.load(f))
+        data = json.load(f)
+    gdf = gpd.GeoDataFrame.from_features(data["features"], crs=4326)
+
+    return gdf
 
 
-def dump_geojson(filepath: StrPath, data: GeoJSONDict) -> None:
-    """导出本地 GeoJSON 文件"""
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
+# to_json 比 pyogrio 快
+def dump_geojson(gdf: gpd.GeoDataFrame, filepath: str | Path):
+    gdf = gdf.set_geometry(gdf.orient_polygons())
+    data = gdf.to_json(drop_id=True, ensure_ascii=False)
+    with open(filepath, mode="w", encoding="utf-8") as f:
+        f.write(data)
 
 
-def polyline_to_polygon(polyline: str) -> shapely.Polygon | shapely.MultiPolygon:
-    """将高德的 polyline 字符串转为多边形对象"""
-    polygons = []
-    for part in polyline.replace(";", "\n").split("|"):
-        with StringIO(part) as f:
-            shell = np.loadtxt(f, delimiter=",")
-        polygon = shapely.Polygon(shell)
-        polygons.append(polygon)
-    polygon = shapely.union_all(polygons)
+# TODO: vectorize
+def _gcj_to_wgs(coords: ArrayLike) -> NDArray[np.float64]:
+    coords = np.asarray(coords, dtype=np.float64)
+    tups: list[tuple[float, float]] = []
+    for lon, lat in coords.tolist():
+        lat, lon = gcj_wgs_bored((lat, lon))
+        tups.append((lon, lat))
 
-    return cast(shapely.Polygon | shapely.MultiPolygon, polygon)
+    return np.array(tups)
 
 
-def gcj_to_wgs(lon: float, lat: float) -> tuple[float, float]:
-    """将一个点从 gcj 坐标系转换到 wgs 坐标系"""
-    lat, lon = gcj_wgs_bored((lat, lon))
-    return lon, lat
+def gcj_to_wgs(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    return gdf.set_geometry(gdf.transform(_gcj_to_wgs))
 
 
-def gcj_geometry_to_wgs[GeometryT: BaseGeometry](geometry: GeometryT) -> GeometryT:
-    """将几何对象从 gcj 坐标系转换到 wgs 坐标系"""
-    coordinates = shapely.get_coordinates(geometry).tolist()
-    coordinates = [gcj_to_wgs(*lonlat) for lonlat in coordinates]
-    return shapely.set_coordinates(geometry, coordinates)
+# TODO: mode="valid_output"
+def round_geometry(gdf: gpd.GeoDataFrame, decimals: int = 6) -> gpd.GeoDataFrame:
+    return gdf.set_geometry(gdf.set_precision(10**-decimals, mode="pointwise"))
 
 
-def round_geometry[GeometryT: BaseGeometry](
-    geometry: GeometryT, decimals: int = 0
-) -> GeometryT:
-    """将几何对象的坐标四舍五入"""
-    coordinates = shapely.get_coordinates(geometry).round(decimals)
-    return shapely.set_coordinates(geometry, coordinates)
+@overload
+def fill_polygon(polygon: shapely.Polygon) -> shapely.Polygon: ...
+
+
+@overload
+def fill_polygon(polygon: shapely.MultiPolygon) -> shapely.MultiPolygon: ...
+
+
+def fill_polygon(
+    polygon: shapely.Polygon | shapely.MultiPolygon,
+) -> shapely.Polygon | shapely.MultiPolygon:
+    if isinstance(polygon, shapely.Polygon):
+        return shapely.Polygon(polygon.exterior)
+    else:
+        return shapely.MultiPolygon(list(map(fill_polygon, polygon.geoms)))

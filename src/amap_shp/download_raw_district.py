@@ -3,27 +3,55 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping
 from functools import wraps
-from typing import cast
+from io import StringIO
+from typing import Literal, TypedDict
 
-import frykit.shp as fshp
+import geopandas as gpd
+import numpy as np
+import pandas as pd
 import requests
 import shapely
-from frykit.shp.typing import FeatureDict, GeoJSONDict
 from loguru import logger
 from retrying import retry
 
 from amap_shp.exceptions import AmapDataError, AmapStatusError
-from amap_shp.typing import DistrictData, DistrictProperties
-from amap_shp.utils import (
-    dump_geojson,
-    gcj_geometry_to_wgs,
-    get_amap_key,
-    get_output_dir,
-    polyline_to_polygon,
-    round_geometry,
-)
+from amap_shp.utils import dump_geojson, get_amap_key, get_output_dir
 
 AMAP_KEY = get_amap_key()
+
+
+class SuggestionDict(TypedDict):
+    keywords: list[str]
+    cities: list[str]
+
+
+class DistrictDict(TypedDict):
+    citycode: str | list[str]  # country 和 province 的 citycode 是空列表
+    adcode: str
+    name: str
+    polyline: str  # 仅当 extentions=all 时第一级才有 polyline 字段
+    center: str
+    level: Literal["country", "province", "city", "district", "street"]
+    districts: list[DistrictDict]
+
+
+class DistrictData(TypedDict):
+    status: Literal["0", "1"]
+    info: str
+    infocode: str
+    # 仅当 status 为 "1" 时才有以下字段
+    count: str
+    suggestion: SuggestionDict
+    districts: list[DistrictDict]
+
+
+class DistrictProperties(TypedDict):
+    province_name: str
+    province_adcode: int
+    city_name: str
+    city_adcode: int
+    district_name: str
+    district_adcode: int
 
 
 def amap_retry[T, **P](func: Callable[P, T]) -> Callable[P, T]:
@@ -51,15 +79,14 @@ def _check_amap_status(data: DistrictData) -> None:
 @amap_retry
 def get_district_data(url: str, params: Mapping[str, str]) -> DistrictData:
     """请求高德行政区域查询的 API"""
-    resp = requests.get(url, params=params)
-    data = cast(DistrictData, resp.json())
+    data = requests.get(url, params=params).json()
     _check_amap_status(data)
 
     return data
 
 
-def get_district_properties_list() -> list[DistrictProperties]:
-    """获取所有区县的元数据。没有区县的省市用它自己代替区县。"""
+def get_district_dataframe() -> pd.DataFrame:
+    """获取区县的元数据的 DataFrame"""
     params = {"key": AMAP_KEY, "subdistrict": "3"}
     url = "http://restapi.amap.com/v3/config/district"
     data = get_district_data(url, params)
@@ -141,25 +168,35 @@ def get_district_properties_list() -> list[DistrictProperties]:
         if properties["district_name"] == "海西蒙古族藏族自治州直辖":
             properties["district_name"] = "大柴旦行政委员会"
 
-    properties_list.sort(key=lambda x: x["district_adcode"])
+    return (
+        pd.DataFrame.from_records(properties_list)
+        .sort_values("district_adcode")
+        .reset_index(drop=True)
+    )
 
-    return cast(list[DistrictProperties], properties_list)
 
+def polyline_to_polygons(polyline: str) -> list[shapely.Polygon]:
+    """将高德的 polyline 字符串转为多边形
 
-def get_district_geometry(adcode: int) -> shapely.Polygon | shapely.MultiPolygon:
-    """
-    获取一个区县的几何对象字典
-
-    extensions=all 时高德 API 会返回表示多边形坐标序列的 polyline 字符串，经度和纬度
-    用逗号分隔，点与点之间用分号分隔。MultiPolygon 的子多边形用竖线分隔。
+    经度和纬度用逗号分隔，点与点之间用分号分隔，MultiPolygon 的子多边形用竖线分隔。
 
     对于带洞的多边形，polyline 并不直接保存外环和内环，而是将带洞的多边形分割成几个独立的
-    不带洞的多边形，将这些多边形用 shapely.union_all 拼在一起能还原带洞的多边形。
-    具体实现见 polyline_to_polygon 函数。
-
-    高德数据应该是 GCJ-02 坐标系的，这里用 PRCoords 库转换成 WGS84 坐标系。
-    polyline 里经纬度的精度是 6 位小数，因此转换后的坐标也取 6 位小数。
+    不带洞的多边形。
     """
+    polygons = []
+    for part in polyline.replace(";", "\n").split("|"):
+        with StringIO(part) as f:
+            shell = np.loadtxt(f, delimiter=",")
+        polygon = shapely.Polygon(shell)
+        polygons.append(polygon)
+    assert polygons  # 保证至少有一个多边形
+
+    return polygons
+
+
+def get_district_polygons(adcode: int) -> list[shapely.Polygon]:
+    """获取一个区县的多边形"""
+    # extentions=all 时含有 polyline 字符串
     url = "https://restapi.amap.com/v3/config/district"
     params = {
         "key": AMAP_KEY,
@@ -170,7 +207,6 @@ def get_district_geometry(adcode: int) -> shapely.Polygon | shapely.MultiPolygon
     }
     data = get_district_data(url, params)
 
-    # 检查是否含有 polyline 字段
     if not data["districts"]:
         raise AmapDataError(f"{adcode=} not found")
     assert len(data["districts"]) == 1
@@ -178,63 +214,32 @@ def get_district_geometry(adcode: int) -> shapely.Polygon | shapely.MultiPolygon
     if "polyline" not in district_dict:
         raise AmapDataError(f"{adcode=} has no polyline")
 
-    polygon = polyline_to_polygon(district_dict["polyline"])
-    polygon = gcj_geometry_to_wgs(polygon)
-    polygon = round_geometry(polygon, 6)
-    if not polygon.is_valid:
-        raise ValueError(f"{polygon} is invalid")
-
-    return polygon
+    return polyline_to_polygons(district_dict["polyline"])
 
 
-def make_district_geojson() -> GeoJSONDict:
-    """制作区县的 GeoJSON。导出的多边形满足外环逆时针内环顺时针的方向。"""
-    features: list[FeatureDict] = []
-    properties_list = get_district_properties_list()
-    for properties in properties_list:
-        geometry = get_district_geometry(properties["district_adcode"])
-        geometry_dict = fshp.geometry_to_dict(geometry)
-        feature = fshp.make_feature(geometry_dict, properties)
-        features.append(feature)
-        logger.info(properties)
+def get_district_geodataframe() -> gpd.GeoDataFrame:
+    """获取区县元数据和多边形的 GeoDataFrame"""
+    df = get_district_dataframe()
+    polygons_list: list[list[shapely.Polygon]] = []
+    for row in df.itertuples(index=False):
+        polygons = get_district_polygons(row.district_adcode)  # pyright: ignore[reportAttributeAccessIssue]
+        polygons_list.append(polygons)
+        logger.info(row)
         time.sleep(0.25)  # 控制请求频率
 
-    data = fshp.make_geojson(features)
+    df["geometry"] = polygons_list
+    df = df.explode("geometry", ignore_index=True)
 
-    return data
-
-
-def make_nine_line_geojson() -> GeoJSONDict:
-    """制作九段线的 GeoJSON"""
-    url = "https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json"
-    resp = requests.get(url)
-    data = cast(GeoJSONDict, resp.json())
-
-    # 全国数据的最后一个 feature 是九段线的多边形
-    geometry_dict = data["features"][-1]["geometry"]
-    polygon = fshp.dict_to_geometry(geometry_dict)
-    polygon = gcj_geometry_to_wgs(polygon)
-    polygon = round_geometry(polygon, 6)
-    if not polygon.is_valid:
-        raise ValueError(f"{polygon} is invalid")
-
-    geometry_dict = fshp.geometry_to_dict(polygon)
-    properties = {"name": "九段线"}
-    feature = fshp.make_feature(geometry_dict, properties)
-    data = fshp.make_geojson([feature])
-
-    return data
+    return gpd.GeoDataFrame(df, crs=4326)
 
 
 def main() -> None:
     dirpath = get_output_dir()
     dirpath.mkdir(parents=True, exist_ok=True)
 
-    dump_geojson(dirpath / "cn_district.json", make_district_geojson())
+    gdf = get_district_geodataframe()
+    dump_geojson(gdf, dirpath / "cn_district_raw.geojson")
     logger.info("区县数据下载完成")
-
-    dump_geojson(dirpath / "nine_line.json", make_nine_line_geojson())
-    logger.info("九段线数据下载完成")
 
 
 if __name__ == "__main__":

@@ -13,13 +13,12 @@ def main() -> None:
     with ZipFile(
         dirpath / "geojson.zip", mode="w", compression=ZIP_DEFLATED, compresslevel=7
     ) as f:
-        for filepath in dirpath.glob("*.json"):
-            f.write(filepath, filepath.name)
-            logger.info(f"{filepath.name} 压缩完成")
+        for filepath in dirpath.iterdir():
+            if filepath.suffix == ".geojson" and not filepath.stem.endswith("_raw"):
+                f.write(filepath, filepath.name)
+                logger.info(f"{filepath.name} 压缩完成")
 
-    for filepath in dirpath.glob("*.json"):
-        filepath.unlink()
-    logger.info("清理 GeoJSON 文件")
+    logger.info("zip 文件制作完成")
 
 
 if __name__ == "__main__":
