@@ -72,6 +72,7 @@ def main() -> None:
     assert not gdf.is_empty.any()
     assert gdf.is_valid.all()
 
+    # TODO: coverage union 会不会太严格了？
     gdf = round_geometry(gcj_to_wgs(gdf))
     assert_polyline_coverage(gdf)
     gdf = union_polylines(gdf)
@@ -83,8 +84,8 @@ def main() -> None:
         normal_mask = ~gdf["district_adcode"].isin(abnormal_adcodes)
         assert gdf.loc[normal_mask, :].is_valid_coverage()
         gdf = repair_polygons(gdf, abnormal_adcodes)
+        gdf = round_geometry(gdf)
 
-    gdf = round_geometry(gdf)
     assert not gdf.is_empty.any()
     assert gdf.is_valid.all()
     if not coverage_valid:
