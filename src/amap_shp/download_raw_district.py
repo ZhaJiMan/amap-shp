@@ -189,7 +189,6 @@ def polyline_to_polygons(polyline: str) -> list[shapely.Polygon]:
             shell = np.loadtxt(f, delimiter=",")
         polygon = shapely.Polygon(shell)
         polygons.append(polygon)
-    assert polygons  # 保证至少有一个多边形
 
     return polygons
 
@@ -228,7 +227,7 @@ def get_district_geodataframe() -> gpd.GeoDataFrame:
         time.sleep(0.25)  # 控制请求频率
 
     df["geometry"] = polygons_list
-    df = df.explode("geometry", ignore_index=True)
+    df = df.explode("geometry", ignore_index=True).fillna(shapely.Polygon())
 
     return gpd.GeoDataFrame(df, crs=4326)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from amap_shp import (
     download_nine_line,
     download_raw_district,
+    make_geojson,
     make_zip,
     process_raw_district,
 )
@@ -14,6 +15,7 @@ def main() -> None:
     download_nine_line.main()
     download_raw_district.main()
     process_raw_district.main()
+    make_geojson.main()
     make_zip.main()
 
 
