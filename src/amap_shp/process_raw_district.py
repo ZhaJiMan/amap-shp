@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import cast
 
 import geopandas as gpd
@@ -17,13 +17,20 @@ from amap_shp.utils import (
 )
 
 
-def assert_polyline_coverage(gdf: gpd.GeoDataFrame) -> None:
-    """断言每组 polyline 都能进行 coverage union"""
+def assert_polyline_coverage_valid(gdf: gpd.GeoDataFrame) -> None:
+    """断言每组 polyline 构成的 coverage 是否有效"""
     assert (  # pyright: ignore[reportGeneralTypeIssues]
         gdf.groupby("district_adcode")["geometry"]
         .agg(gpd.GeoSeries.is_valid_coverage)  # pyright: ignore[reportAttributeAccessIssue]
         .all()
     )
+
+
+def assert_coverage_valid_excluding(
+    gdf: gpd.GeoDataFrame, exclude_adcodes: Sequence[int]
+) -> None:
+    """断言排除了指定区县后的 coverage 是否有效"""
+    assert gdf[~gdf["district_adcode"].isin(exclude_adcodes)].is_valid_coverage()
 
 
 def union_polylines(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -34,7 +41,7 @@ def union_polylines(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     )
 
 
-def repair_polygons(gdf: gpd.GeoDataFrame, adcodes: Sequence[int]) -> gpd.GeoDataFrame:
+def repair_polygons(gdf: gpd.GeoDataFrame, adcodes: Iterable[int]) -> gpd.GeoDataFrame:
     """修复存在重叠的多边形
 
     如果有多边形跟邻接多边形有重叠，通过用邻接多边形重新围出它们的形状来进行修复。
@@ -74,15 +81,14 @@ def main() -> None:
 
     # TODO: coverage union 会不会太严格了？
     gdf = round_geometry(gcj_to_wgs(gdf))
-    assert_polyline_coverage(gdf)
+    assert_polyline_coverage_valid(gdf)
     gdf = union_polylines(gdf)
 
     coverage_valid = gdf.is_valid_coverage()
     if not coverage_valid:
         logger.warning("区县数据存在重叠，尝试修复")
         abnormal_adcodes = [360822, 360983]  # 江西省南昌市吉水县和高安市
-        normal_mask = ~gdf["district_adcode"].isin(abnormal_adcodes)
-        assert gdf.loc[normal_mask, :].is_valid_coverage()
+        assert_coverage_valid_excluding(gdf, abnormal_adcodes)
         gdf = repair_polygons(gdf, abnormal_adcodes)
         gdf = round_geometry(gdf)
 
