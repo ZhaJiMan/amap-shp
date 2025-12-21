@@ -18,6 +18,7 @@ __all__ = [
     "gcj_to_wgs",
     "get_amap_key",
     "get_output_dir",
+    "get_project_dir",
     "load_geojson",
     "round_geometry",
 ]
@@ -25,12 +26,23 @@ __all__ = [
 load_dotenv()
 
 
+type PolygonType = shapely.Polygon | shapely.MultiPolygon
+
+
 def get_amap_key() -> str:
     return os.getenv("AMAP_KEY", "")
 
 
+def get_project_dir() -> Path:
+    for dirpath in Path(__file__).resolve().parents:
+        if (dirpath / "pyproject.toml").exists():
+            return dirpath
+
+    raise FileNotFoundError("pyproject.toml not found")
+
+
 def get_output_dir() -> Path:
-    return Path(os.getenv("OUTPUT_DIR", "output"))
+    return get_project_dir() / "output"
 
 
 def load_geojson(filepath: str | Path) -> gpd.GeoDataFrame:
@@ -77,9 +89,7 @@ def fill_polygon(polygon: shapely.Polygon) -> shapely.Polygon: ...
 def fill_polygon(polygon: shapely.MultiPolygon) -> shapely.MultiPolygon: ...
 
 
-def fill_polygon(
-    polygon: shapely.Polygon | shapely.MultiPolygon,
-) -> shapely.Polygon | shapely.MultiPolygon:
+def fill_polygon(polygon: PolygonType) -> PolygonType:
     if isinstance(polygon, shapely.Polygon):
         return shapely.Polygon(polygon.exterior)
     else:

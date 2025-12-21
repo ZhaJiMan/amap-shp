@@ -25,10 +25,9 @@ def main() -> None:
     dirpath = get_output_dir()
     dirpath.mkdir(parents=True, exist_ok=True)
 
-    gdf = get_nine_line_geodataframe()
-    gdf = gdf.pipe(gcj_to_wgs).pipe(round_geometry)
-    assert not gdf.is_empty.any()
-    assert gdf.is_valid.all()
+    gdf = get_nine_line_geodataframe().pipe(gcj_to_wgs).pipe(round_geometry)
+    assert not gdf.is_empty.any(), gdf[gdf.is_empty]
+    assert gdf.is_valid.all(), gdf[~gdf.is_valid]
 
     dump_geojson(gdf, dirpath / "nine_line.geojson")
     logger.info("九段线数据下载完成")

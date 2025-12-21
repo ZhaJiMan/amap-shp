@@ -109,7 +109,7 @@ def get_district_dataframe() -> pd.DataFrame:
             properties_list.append(properties)
             continue
 
-        assert province_dict["level"] == "province"
+        assert province_dict["level"] == "province", province_dict["level"]
         for city_dict in province_dict["districts"]:
             # 香港和澳门下一级就是区县
             if city_dict["level"] == "district":
@@ -124,7 +124,7 @@ def get_district_dataframe() -> pd.DataFrame:
                 properties_list.append(properties)
                 continue
 
-            assert city_dict["level"] == "city"
+            assert city_dict["level"] == "city", city_dict["level"]
             for district_dict in city_dict["districts"]:
                 # 部分城市和省直辖县下一级就是街道
                 if district_dict["level"] == "street":
@@ -139,7 +139,7 @@ def get_district_dataframe() -> pd.DataFrame:
                     properties_list.append(properties)
                     break
 
-                assert district_dict["level"] == "district"
+                assert district_dict["level"] == "district", district_dict["level"]
                 properties = {
                     "province_name": province_dict["name"],
                     "province_adcode": int(province_dict["adcode"]),
@@ -208,7 +208,7 @@ def get_district_polygons(adcode: int) -> list[shapely.Polygon]:
 
     if not data["districts"]:
         raise AmapDataError(f"{adcode=} not found")
-    assert len(data["districts"]) == 1
+    assert len(data["districts"]) == 1, len(data["districts"])
     district_dict = data["districts"][0]
     if "polyline" not in district_dict:
         raise AmapDataError(f"{adcode=} has no polyline")
@@ -221,7 +221,7 @@ def get_district_geodataframe() -> gpd.GeoDataFrame:
     df = get_district_dataframe()
     polygons_list: list[list[shapely.Polygon]] = []
     for row in df.itertuples(index=False):
-        polygons = get_district_polygons(row.district_adcode)  # pyright: ignore[reportAttributeAccessIssue]
+        polygons = get_district_polygons(row.district_adcode)
         polygons_list.append(polygons)
         logger.info(row)
         time.sleep(0.25)  # 控制请求频率

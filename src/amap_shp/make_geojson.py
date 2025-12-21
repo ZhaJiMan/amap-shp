@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
-
 import geopandas as gpd
 from loguru import logger
 
@@ -10,11 +8,9 @@ from amap_shp.utils import dump_geojson, get_output_dir, load_geojson
 
 def make_city_geodataframe(district_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """用区县数据合成市级数据"""
-    return cast(
-        gpd.GeoDataFrame,
-        district_gdf.dissolve("city_adcode", as_index=False, method="coverage")[
-            district_gdf.columns
-        ]
+    return (
+        district_gdf.dissolve("city_adcode", as_index=False, method="coverage")
+        .loc[:, district_gdf.columns]
         .drop(columns=["district_name", "district_adcode"])
         .reset_index(drop=True),
     )
@@ -22,11 +18,9 @@ def make_city_geodataframe(district_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 def make_province_geodataframe(city_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """用市级数据合成省级数据"""
-    return cast(
-        gpd.GeoDataFrame,
-        city_gdf.dissolve("province_adcode", as_index=False, method="coverage")[
-            city_gdf.columns
-        ]
+    return (
+        city_gdf.dissolve("province_adcode", as_index=False, method="coverage")
+        .loc[:, city_gdf.columns]
         .drop(columns=["city_name", "city_adcode"])
         .reset_index(drop=True),
     )
