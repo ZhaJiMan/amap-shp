@@ -11,8 +11,8 @@ wheels/
 uv.lock
 
 # cache
-.mypy_cache
-.ruff_cache
+.mypy_cache/
+.ruff_cache/
 
 # data
 output/
